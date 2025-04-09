@@ -1,6 +1,10 @@
 {
   "extends": ["next/core-web-vitals"],
   "rules": {
-    "@typescript-eslint/no-explicit-any": "off"
-  }
+    "@typescript-eslint/no-explicit-any": "off",
+    "react/no-unstable-nested-components": "warn",
+    "react/display-name": "off",
+    "react/no-deprecated": "off"
+  },
+  "ignorePatterns": ["node_modules/", ".next/", "out/"]
 } 

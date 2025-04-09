@@ -1,167 +1,175 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { supabase } from '@/db';
 
-// Supabase 클라이언트 생성
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error('Missing Supabase environment variables');
-}
-
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
-
-// 모든 선수 조회 API
+// GET: 선수 목록 조회
 export async function GET() {
   try {
-    const { data, error } = await supabase
-      .from('users')
-      .select('*')
-      .order('level', { ascending: true })
-      .order('name');
-
-    if (error) {
-      console.error('Supabase error:', error);
+    console.log('Fetching players...');
+    
+    // Supabase 연결 확인
+    if (!supabase) {
+      console.error('Supabase client is not initialized');
       return NextResponse.json(
-        { error: '선수 목록을 불러오는데 실패했습니다.' },
+        { error: '데이터베이스 연결에 실패했습니다.' },
         { status: 500 }
       );
     }
-
-    return NextResponse.json(data);
+    
+    // 테이블 존재 여부 확인
+    const { data: tables, error: tablesError } = await supabase
+      .from('users')
+      .select('count')
+      .limit(1);
+      
+    if (tablesError) {
+      console.error('Error checking users table:', tablesError);
+      return NextResponse.json(
+        { error: '선수 테이블에 접근할 수 없습니다.' },
+        { status: 500 }
+      );
+    }
+    
+    // 선수 목록 조회
+    const { data, error } = await supabase
+      .from('users')
+      .select('*')
+      .order('created_at', { ascending: false });
+    
+    if (error) {
+      console.error('Error fetching players:', error);
+      return NextResponse.json(
+        { error: '선수 목록을 가져오는데 실패했습니다.' },
+        { status: 500 }
+      );
+    }
+    
+    console.log(`Found ${data?.length || 0} players`);
+    return NextResponse.json(data || []);
   } catch (error) {
-    console.error('Error fetching players:', error);
+    console.error('Unexpected error fetching players:', error);
     return NextResponse.json(
-      { error: '선수 목록을 불러오는데 실패했습니다.' },
+      { error: '선수 목록을 가져오는 중 예상치 못한 오류가 발생했습니다.' },
       { status: 500 }
     );
   }
 }
 
-// 선수 추가 API
+// POST: 새 선수 등록
 export async function POST(request: Request) {
   try {
     const body = await request.json();
     const { name, level } = body;
-
+    
     if (!name) {
       return NextResponse.json(
         { error: '이름은 필수입니다.' },
         { status: 400 }
       );
     }
-
-    // level 값 검증
-    if (level && (level < 1 || level > 9)) {
+    
+    if (!level || level < 1 || level > 9) {
       return NextResponse.json(
         { error: '부수는 1부터 9까지의 값이어야 합니다.' },
         { status: 400 }
       );
     }
-
-    // 새 선수 추가
-    const { data, error } = await supabase
+    
+    console.log('Creating new player:', { name, level });
+    
+    // 선수 등록
+    const { data: player, error: playerError } = await supabase
       .from('users')
-      .insert([{ name, level: level || 1 }])
-      .select();
-
-    if (error) {
-      console.error('Supabase error:', error);
+      .insert([{ name, level }])
+      .select()
+      .single();
+    
+    if (playerError) {
+      console.error('Error creating player:', playerError);
       return NextResponse.json(
         { error: '선수 등록에 실패했습니다.' },
         { status: 500 }
       );
     }
-
-    return NextResponse.json(data[0]);
+    
+    console.log('Player created:', player);
+    
+    return NextResponse.json({
+      success: true,
+      message: '선수가 성공적으로 등록되었습니다.',
+      player
+    });
   } catch (error) {
-    console.error('Error adding player:', error);
+    console.error('Unexpected error creating player:', error);
     return NextResponse.json(
-      { error: '선수 등록에 실패했습니다.' },
+      { error: '선수 등록 중 예상치 못한 오류가 발생했습니다.' },
       { status: 500 }
     );
   }
 }
 
-// 선수 수정 API
+// PUT: 선수 정보 수정
 export async function PUT(request: Request) {
   try {
-    const { id, name, level } = await request.json();
-    console.log('Received update request:', { id, name, level });
-
-    if (!id || !name) {
+    const body = await request.json();
+    const { id, name, level } = body;
+    
+    if (!id) {
       return NextResponse.json(
-        { error: '선수 ID와 이름은 필수입니다.' },
+        { error: '선수 ID는 필수입니다.' },
         { status: 400 }
       );
     }
-
-    if (level < 1 || level > 9) {
+    
+    if (!name) {
       return NextResponse.json(
-        { error: '부수는 1부터 9까지의 숫자여야 합니다.' },
+        { error: '이름은 필수입니다.' },
         { status: 400 }
       );
     }
-
-    // 먼저 해당 ID의 선수가 존재하는지 확인
-    console.log('Checking if player exists with ID:', id);
-    const { data: existingPlayer, error: checkError } = await supabase
-      .from('users')
-      .select('*')
-      .eq('id', id);
-
-    console.log('Player check result:', {
-      existingPlayer,
-      checkError,
-      query: `SELECT * FROM users WHERE id = '${id}'`
-    });
-
-    if (checkError || !existingPlayer || existingPlayer.length === 0) {
-      console.log('Player not found:', { checkError, existingPlayer });
+    
+    if (!level || level < 1 || level > 9) {
       return NextResponse.json(
-        { error: '수정할 선수를 찾을 수 없습니다.' },
-        { status: 404 }
+        { error: '부수는 1부터 9까지의 값이어야 합니다.' },
+        { status: 400 }
       );
     }
-
+    
+    console.log('Updating player:', { id, name, level });
+    
     // 선수 정보 수정
-    console.log('Updating player with data:', { id, name, level });
-    const { data, error } = await supabase
+    const { data: player, error: playerError } = await supabase
       .from('users')
       .update({ name, level })
       .eq('id', id)
-      .select();
-
-    console.log('Update response:', { data, error });
-
-    if (error) {
-      console.error('Error updating player:', error);
+      .select()
+      .single();
+    
+    if (playerError) {
+      console.error('Error updating player:', playerError);
       return NextResponse.json(
         { error: '선수 정보 수정에 실패했습니다.' },
         { status: 500 }
       );
     }
-
-    if (!data || data.length === 0) {
+    
+    if (!player) {
       return NextResponse.json(
-        { error: '수정할 선수를 찾을 수 없습니다.' },
+        { error: '선수를 찾을 수 없습니다.' },
         { status: 404 }
       );
     }
-
-    // 필요한 필드만 포함하여 응답
-    const updatedPlayer = {
-      id: data[0].id,
-      name: data[0].name,
-      level: data[0].level,
-      created_at: data[0].created_at,
-    };
-
-    return NextResponse.json(updatedPlayer);
+    
+    console.log('Player updated:', player);
+    
+    return NextResponse.json({
+      success: true,
+      message: '선수 정보가 성공적으로 수정되었습니다.',
+      player
+    });
   } catch (error) {
-    console.error('Error in PUT /api/players:', error);
+    console.error('Unexpected error updating player:', error);
     return NextResponse.json(
-      { error: '서버 오류가 발생했습니다.' },
+      { error: '선수 정보 수정 중 예상치 못한 오류가 발생했습니다.' },
       { status: 500 }
     );
   }

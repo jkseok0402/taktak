@@ -1,7 +1,11 @@
 'use client';
 
+export const dynamic = 'force-dynamic'  // 캐싱 비활성화
+export const revalidate = 0  // 캐싱 시간 0으로 설정
+
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import Navigation from '@/components/layout/Navigation';
 import {
   BarChart,
   Bar,
@@ -12,22 +16,6 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts';
-
-interface PlayerStats {
-  id: string;
-  name: string;
-  level: number;
-  total_matches: number;
-  wins: number;
-  losses: number;
-  win_rate: number;
-  total_sets_won: number;
-  total_sets_lost: number;
-  set_difference: number;
-  current_streak: number;
-  last_5_matches: string[];
-  match_dates: string[];
-}
 
 // 부수별 스타일 정의
 const levelStyles = {
@@ -42,18 +30,71 @@ const levelStyles = {
   9: 'bg-gray-100 text-gray-800',
 } as const;
 
+interface IDashboardData {
+  totalMatches: number;
+  totalPlayers: number;
+  matchDateRange: {
+    first: string | null;
+    last: string | null;
+  };
+  highestWinRate: {
+    player: {
+      id: string;
+      name: string;
+      level: number;
+    };
+    rate: number;
+  } | null;
+  lowestWinRate: {
+    player: {
+      id: string;
+      name: string;
+      level: number;
+    };
+    rate: number;
+  } | null;
+  highestStreak: {
+    player: {
+      id: string;
+      name: string;
+      level: number;
+    };
+    streak: number;
+  } | null;
+  lowestStreak: {
+    player: {
+      id: string;
+      name: string;
+      level: number;
+    };
+    streak: number;
+  } | null;
+  playerStats: Array<{
+    id: string;
+    name: string;
+    level: number;
+    wins: number;
+    losses: number;
+    winRate: number;
+    setsWon: number;
+    setsLost: number;
+    currentStreak: number;
+    recentMatches: string[];
+  }>;
+}
+
 export default function DashboardPage() {
-  const [stats, setStats] = useState<PlayerStats[]>([]);
+  const [dashboardData, setDashboardData] = useState<IDashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    const fetchStats = async () => {
+    const fetchDashboardData = async () => {
       try {
-        const response = await fetch('/api/stats');
+        const response = await fetch('/api/dashboard');
         if (!response.ok) throw new Error('통계를 불러오는데 실패했습니다.');
         const data = await response.json();
-        setStats(data);
+        setDashboardData(data);
       } catch (err) {
         console.error('통계 로딩 에러:', err);
         setError(err instanceof Error ? err.message : '알 수 없는 오류가 발생했습니다.');
@@ -62,7 +103,7 @@ export default function DashboardPage() {
       }
     };
 
-    fetchStats();
+    fetchDashboardData();
   }, []);
 
   if (loading) {
@@ -81,62 +122,58 @@ export default function DashboardPage() {
     );
   }
 
+  if (!dashboardData) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-gray-500">데이터가 없습니다.</div>
+      </div>
+    );
+  }
+
+  const chartData = dashboardData.playerStats
+    .sort((a, b) => b.winRate - a.winRate)
+    .map(player => ({
+      name: player.name,
+      승률: Math.round(player.winRate),
+      경기수: player.wins + player.losses,
+      승리: player.wins,
+      패배: player.losses,
+    }));
+
+  const sortedStats = [...dashboardData.playerStats].sort((a, b) => {
+    if (b.winRate !== a.winRate) {
+      return b.winRate - a.winRate;
+    }
+    return (b.wins + b.losses) - (a.wins + a.losses);
+  });
+
   // 승률 차트 데이터
-  const winRateData = stats.map(player => ({
+  const winRateData = sortedStats.slice(0, 5).map(player => ({
     name: player.name,
-    승률: player.win_rate
+    승률: Math.round(player.winRate),
   }));
 
-  // 모든 경기 날짜를 가져오는 함수
-  const getAllMatchDates = () => {
-    const allDates = stats.flatMap(player => player.match_dates || []);
-    if (allDates.length === 0) return { startDate: null, endDate: null };
-    
-    const sortedDates = allDates.sort();
-    return {
-      startDate: new Date(sortedDates[0]).toLocaleDateString(),
-      endDate: new Date(sortedDates[sortedDates.length - 1]).toLocaleDateString()
-    };
-  };
+  // 경기 수 차트 데이터
+  const matchCountData = sortedStats.slice(0, 5).map(player => ({
+    name: player.name,
+    경기수: player.wins + player.losses,
+  }));
+
+  // 승/패 차트 데이터
+  const winLossData = sortedStats.slice(0, 5).map(player => ({
+    name: player.name,
+    승리: player.wins,
+    패배: player.losses,
+  }));
 
   return (
     <div className="min-h-screen bg-gray-100">
-      {/* 네비게이션 바 */}
-      <nav className="bg-white shadow-lg">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between h-16">
-            <div className="flex">
-              <div className="flex-shrink-0 flex items-center">
-                <h1 className="text-xl font-bold text-gray-900">흥탁 리그관리</h1>
-              </div>
-              <div className="hidden sm:ml-6 sm:flex sm:space-x-8">
-                <Link href="/dashboard" className="border-indigo-500 text-gray-900 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
-                  대시보드
-                </Link>
-                <Link href="/matches" className="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
-                  경기 결과
-                </Link>
-                <Link href="/stats" className="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
-                  선수 통계
-                </Link>
-                <Link href="/visualization" className="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
-                  리그 통계
-                </Link>
-                <Link href="/players" className="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
-                  선수 관리
-                </Link>
-              </div>
-            </div>
-          </div>
-        </div>
-      </nav>
-
-      {/* 메인 컨텐츠 */}
-      <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+      <Navigation />
+      <main className="max-w-7xl mx-auto py-2 sm:px-6 lg:px-8">
         {/* 요약 카드 */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
           <div className="bg-white overflow-hidden shadow rounded-lg">
-            <div className="p-5">
+            <div className="p-4">
               <div className="flex items-center">
                 <div className="flex-shrink-0">
                   <svg className="h-6 w-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -145,18 +182,26 @@ export default function DashboardPage() {
                 </div>
                 <div className="ml-5 w-0 flex-1">
                   <dl>
-                    <dt className="text-sm font-medium text-gray-500 truncate">
-                      총 경기 수
+                    <dt className="text-sm font-medium text-gray-500 truncate flex justify-between items-center">
+                      <span>총 경기 수</span>
+                      <span>총 등록선수</span>
                     </dt>
-                    <dd className="text-lg font-medium text-gray-900">
-                      {Math.floor(stats.reduce((acc, player) => acc + player.total_matches, 0) / 2)}
+                    <dd className="text-lg font-medium text-gray-900 flex justify-between items-center">
+                      <span>{dashboardData.totalMatches}경기</span>
+                      <span>{dashboardData.totalPlayers}명</span>
                     </dd>
                     <dd className="text-sm text-gray-500">
-                      {(() => {
-                        const { startDate, endDate } = getAllMatchDates();
-                        if (!startDate || !endDate) return '';
-                        return `${startDate} ~ ${endDate}`;
-                      })()}
+                      {dashboardData.matchDateRange.first && dashboardData.matchDateRange.last && (
+                        `${new Date(dashboardData.matchDateRange.first).toLocaleDateString('ko-KR', {
+                          year: 'numeric',
+                          month: 'long',
+                          day: 'numeric'
+                        })} ~ ${new Date(dashboardData.matchDateRange.last).toLocaleDateString('ko-KR', {
+                          year: 'numeric',
+                          month: 'long',
+                          day: 'numeric'
+                        })}`
+                      )}
                     </dd>
                   </dl>
                 </div>
@@ -165,7 +210,7 @@ export default function DashboardPage() {
           </div>
 
           <div className="bg-white overflow-hidden shadow rounded-lg">
-            <div className="p-5">
+            <div className="p-4">
               <div className="flex items-center">
                 <div className="flex-shrink-0">
                   <svg className="h-6 w-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -175,22 +220,29 @@ export default function DashboardPage() {
                 <div className="ml-5 w-0 flex-1">
                   <dl>
                     <dt className="text-sm font-medium text-gray-500 truncate">
-                      최고 승률
+                      최대/최소승률
                     </dt>
                     <dd className="text-lg font-medium text-gray-900">
-                      {(() => {
-                        const maxWinRate = Math.max(...stats.map(player => player.win_rate));
-                        const bestPlayer = stats.find(player => player.win_rate === maxWinRate);
-                        return (
-                          <>
-                            {maxWinRate.toFixed(1)}% ({' '}
-                            <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${levelStyles[bestPlayer?.level as keyof typeof levelStyles]}`}>
-                              {bestPlayer?.level}부
+                      {dashboardData.highestWinRate && (
+                        <div className="flex justify-between items-start gap-4">
+                          <div className="text-green-600 text-sm">
+                            {Math.round(dashboardData.highestWinRate.rate)}% ({' '}
+                            <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${levelStyles[dashboardData.highestWinRate.player.level as keyof typeof levelStyles]}`}>
+                              {dashboardData.highestWinRate.player.level}부
                             </span>{' '}
-                            {bestPlayer?.name})
-                          </>
-                        );
-                      })()}
+                            {dashboardData.highestWinRate.player.name})
+                          </div>
+                          {dashboardData.lowestWinRate && (
+                            <div className="text-red-600 text-sm">
+                              {Math.round(dashboardData.lowestWinRate.rate)}% ({' '}
+                              <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${levelStyles[dashboardData.lowestWinRate.player.level as keyof typeof levelStyles]}`}>
+                                {dashboardData.lowestWinRate.player.level}부
+                              </span>{' '}
+                              {dashboardData.lowestWinRate.player.name})
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </dd>
                   </dl>
                 </div>
@@ -199,7 +251,7 @@ export default function DashboardPage() {
           </div>
 
           <div className="bg-white overflow-hidden shadow rounded-lg">
-            <div className="p-5">
+            <div className="p-4">
               <div className="flex items-center">
                 <div className="flex-shrink-0">
                   <svg className="h-6 w-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -209,22 +261,29 @@ export default function DashboardPage() {
                 <div className="ml-5 w-0 flex-1">
                   <dl>
                     <dt className="text-sm font-medium text-gray-500 truncate">
-                      최고 연승
+                      최고 연승/연패
                     </dt>
                     <dd className="text-lg font-medium text-gray-900">
-                      {(() => {
-                        const maxStreak = Math.max(...stats.map(player => player.current_streak));
-                        const bestPlayer = stats.find(player => player.current_streak === maxStreak);
-                        return (
-                          <>
-                            {maxStreak}연승 ({' '}
-                            <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${levelStyles[bestPlayer?.level as keyof typeof levelStyles]}`}>
-                              {bestPlayer?.level}부
+                      {dashboardData.highestStreak && (
+                        <div className="flex justify-between items-start gap-4">
+                          <div className="text-green-600 text-sm">
+                            {dashboardData.highestStreak.streak}연승 ({' '}
+                            <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${levelStyles[dashboardData.highestStreak.player.level as keyof typeof levelStyles]}`}>
+                              {dashboardData.highestStreak.player.level}부
                             </span>{' '}
-                            {bestPlayer?.name})
-                          </>
-                        );
-                      })()}
+                            {dashboardData.highestStreak.player.name})
+                          </div>
+                          {dashboardData.lowestStreak && (
+                            <div className="text-red-600 text-sm">
+                              {Math.abs(dashboardData.lowestStreak.streak)}연패 ({' '}
+                              <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${levelStyles[dashboardData.lowestStreak.player.level as keyof typeof levelStyles]}`}>
+                                {dashboardData.lowestStreak.player.level}부
+                              </span>{' '}
+                              {dashboardData.lowestStreak.player.name})
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </dd>
                   </dl>
                 </div>
@@ -234,68 +293,124 @@ export default function DashboardPage() {
         </div>
 
         {/* 승률 차트 */}
-        <div className="bg-white shadow rounded-lg p-6 mb-8">
-          <h2 className="text-lg font-medium text-gray-900 mb-4">선수별 승률</h2>
-          <div className="h-[300px]">
+        <div className="bg-white shadow rounded-lg p-4 mb-4">
+          <h2 className="text-lg font-medium text-gray-900 mb-2">선수별 승률</h2>
+          <div className="h-[270px]">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={winRateData}>
+              <BarChart 
+                data={chartData} 
+                margin={{ top: 10, right: 30, left: 0, bottom: 30 }}
+              >
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="name" />
-                <YAxis />
-                <Tooltip />
-                <Legend />
-                <Bar dataKey="승률" fill="#8884d8" />
+                <XAxis
+                  dataKey="name"
+                  angle={-45}
+                  textAnchor="end"
+                  height={35}
+                  interval={0}
+                  tick={{ fontSize: 12 }}
+                />
+                <YAxis 
+                  domain={[0, 100]}
+                  tickFormatter={(value) => `${value}%`}
+                  width={40}
+                  tick={{ fontSize: 12 }}
+                  axisLine={{ stroke: '#E5E7EB' }}
+                  tickLine={{ stroke: '#E5E7EB' }}
+                  allowDecimals={false}
+                  orientation="left"
+                  type="number"
+                  padding={{ top: 10, bottom: 0 }}
+                />
+                <Tooltip 
+                  formatter={(value) => [`${value}%`, '승률']}
+                  cursor={{ fillOpacity: 0.1 }}
+                />
+                <Bar 
+                  dataKey="승률" 
+                  fill="#8884d8"
+                  radius={[4, 4, 0, 0]}
+                  maxBarSize={50}
+                />
               </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
 
         {/* 최근 경기 결과 */}
-        <div className="bg-white shadow rounded-lg p-6">
-          <h2 className="text-lg font-medium text-gray-900 mb-4">최근 경기 결과</h2>
+        <div className="bg-white shadow rounded-lg p-4">
+          <h2 className="text-lg font-medium text-gray-900 mb-2">선수별 통계</h2>
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     선수
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     최근 5경기
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-2 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    총 경기
+                  </th>
+                  <th className="px-2 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                     승률
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    연승
+                  <th className="px-2 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    연승/연패
                   </th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {stats.map((player) => (
+                {dashboardData.playerStats.map((player) => (
                   <tr key={player.id}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      {player.name}
+                    <td className="px-2 py-2 whitespace-nowrap text-sm font-medium text-gray-900">
+                      <div className="flex items-center gap-1">
+                        {player.name}
+                      </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {player.last_5_matches.map((result, i) => (
-                        <span
-                          key={i}
-                          className={`inline-block w-6 h-6 text-center leading-6 rounded-full mr-1 ${
-                            result === 'W'
-                              ? 'bg-green-100 text-green-800'
-                              : 'bg-red-100 text-red-800'
-                          }`}
-                        >
-                          {result}
+                    <td className="px-2 py-2 whitespace-nowrap text-sm text-gray-500">
+                      <div className="flex items-center">
+                        {player.recentMatches.map((result, i) => (
+                          <span
+                            key={i}
+                            className={`inline-block w-5 h-5 text-center leading-5 rounded-full mr-1 text-xs ${
+                              result === 'W' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                            }`}
+                          >
+                            {result}
+                          </span>
+                        ))}
+                      </div>
+                    </td>
+                    <td className="px-2 py-2 whitespace-nowrap text-sm text-gray-500 text-center">
+                      <span className="font-medium">
+                        {player.wins + player.losses}
+                      </span>
+                    </td>
+                    <td className="px-2 py-2 whitespace-nowrap text-sm text-gray-500 text-center">
+                      <div className="flex items-center justify-center">
+                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                          player.winRate >= 70 ? 'bg-green-100 text-green-800' :
+                          player.winRate >= 60 ? 'bg-yellow-100 text-yellow-800' :
+                          'bg-red-100 text-red-800'
+                        }`}>
+                          {Math.round(player.winRate)}%
                         </span>
-                      ))}
+                      </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {player.win_rate.toFixed(1)}%
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {player.current_streak}연승
+                    <td className="px-2 py-2 whitespace-nowrap text-sm text-gray-500 text-center">
+                      <div className="flex items-center justify-center">
+                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                          player.currentStreak > 0 ? 'bg-green-100 text-green-800' :
+                          player.currentStreak < 0 ? 'bg-red-100 text-red-800' :
+                          'bg-gray-100 text-gray-800'
+                        }`}>
+                          {player.currentStreak > 0 ? `${player.currentStreak}연승` : 
+                           player.currentStreak < 0 ? `${Math.abs(player.currentStreak)}연패` : 
+                           '없음'}
+                        </span>
+                      </div>
                     </td>
                   </tr>
                 ))}

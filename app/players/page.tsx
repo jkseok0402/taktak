@@ -1,13 +1,17 @@
 'use client';
 
+export const dynamic = 'force-dynamic'  // 캐싱 비활성화
+export const revalidate = 0  // 캐싱 시간 0으로 설정
+
 import { useState, useEffect } from 'react';
 import Navigation from '@/components/layout/Navigation';
+import { PencilIcon, TrashIcon } from '@heroicons/react/24/outline';
 
 interface Player {
   id: string;
   name: string;
   created_at: string;
-  level: number; // 부수 (1-9)
+  level: number;
 }
 
 // 부수별 스타일 정의
@@ -40,18 +44,26 @@ export default function PlayersPage() {
   const [editLevel, setEditLevel] = useState<number>(1);
   const [editError, setEditError] = useState('');
   
-  // 선수 정보 불러오기
+  // 선수 목록 조회
   const fetchPlayers = async () => {
     try {
+      setLoading(true);
+      setError('');
       const response = await fetch('/api/players');
-      if (!response.ok) {
-        throw new Error('선수 목록을 가져오는데 실패했습니다.');
-      }
       const data = await response.json();
-      setPlayers(data);
-    } catch (error) {
-      console.error('Error fetching players:', error);
-      setError('선수 목록을 가져오는데 실패했습니다.');
+      
+      if (!response.ok) {
+        throw new Error(data.error || '선수 목록을 가져오는데 실패했습니다.');
+      }
+      
+      if (Array.isArray(data)) {
+        setPlayers(data);
+      } else {
+        throw new Error('서버로부터 잘못된 데이터 형식을 받았습니다.');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '선수 목록을 가져오는데 실패했습니다.');
+      setPlayers([]);
     } finally {
       setLoading(false);
     }
@@ -61,18 +73,18 @@ export default function PlayersPage() {
     fetchPlayers();
   }, []);
 
-  // 선수 추가
+  // 새 선수 추가
   const handleAddPlayer = async (e: React.FormEvent) => {
     e.preventDefault();
     setAddError('');
+    setAddingPlayer(true);
     
     if (!newPlayerName) {
       setAddError('이름은 필수입니다.');
+      setAddingPlayer(false);
       return;
     }
 
-    setAddingPlayer(true);
-    
     try {
       const response = await fetch('/api/players', {
         method: 'POST',
@@ -91,10 +103,9 @@ export default function PlayersPage() {
         throw new Error(data.error || '선수 등록에 실패했습니다.');
       }
       
-      // 폼 초기화 및 목록 갱신
       setNewPlayerName('');
       setNewPlayerLevel(1);
-      fetchPlayers();
+      await fetchPlayers();
     } catch (err) {
       setAddError(err instanceof Error ? err.message : '알 수 없는 오류가 발생했습니다.');
     } finally {
@@ -113,13 +124,13 @@ export default function PlayersPage() {
         method: 'DELETE',
       });
       
+      const data = await response.json();
+      
       if (!response.ok) {
-        const data = await response.json();
         throw new Error(data.error || '선수 삭제에 실패했습니다.');
       }
       
-      // 목록 갱신
-      fetchPlayers();
+      await fetchPlayers();
     } catch (err) {
       alert(err instanceof Error ? err.message : '알 수 없는 오류가 발생했습니다.');
     }
@@ -153,40 +164,39 @@ export default function PlayersPage() {
     }
 
     try {
-      console.log('Sending update request:', {
-        id: editingPlayer.id,
-        name: editName,
-        level: editLevel,
-      });
-
-      const response = await fetch('/api/players', {
+      const response = await fetch(`/api/players/${editingPlayer.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          id: editingPlayer.id,
           name: editName,
           level: editLevel,
         }),
       });
       
       const data = await response.json();
-      console.log('Update response:', data);
       
       if (!response.ok) {
         throw new Error(data.error || '선수 정보 수정에 실패했습니다.');
       }
       
-      // 수정 모드 종료 및 목록 갱신
       setEditingPlayer(null);
       setEditName('');
       setEditLevel(1);
-      fetchPlayers();
+      await fetchPlayers();
     } catch (err) {
-      console.error('Error updating player:', err);
       setEditError(err instanceof Error ? err.message : '알 수 없는 오류가 발생했습니다.');
     }
+  };
+
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('ko-KR', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    });
   };
 
   if (loading) {
@@ -200,195 +210,143 @@ export default function PlayersPage() {
   return (
     <div className="min-h-screen bg-gray-100">
       <Navigation />
-      <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-        <div className="px-4 py-6 sm:px-0">
-          <h1 className="text-2xl font-bold text-gray-900 mb-6">선수 관리</h1>
-          
-          {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-4">
-              {error}
-            </div>
-          )}
-          
-          {/* 선수 추가 폼 */}
-          <div className="bg-white shadow rounded-lg overflow-hidden mb-8 p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">새 선수 등록</h2>
-            <form onSubmit={handleAddPlayer} className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label htmlFor="player-name" className="block text-sm font-medium text-gray-700">
-                    이름
-                  </label>
-                  <input
-                    type="text"
-                    id="player-name"
-                    value={newPlayerName}
-                    onChange={(e) => setNewPlayerName(e.target.value)}
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                    placeholder="선수 이름"
-                    required
-                  />
-                </div>
-                <div>
-                  <label htmlFor="player-level" className="block text-sm font-medium text-gray-700">
-                    부수
-                  </label>
-                  <select
-                    id="player-level"
-                    value={newPlayerLevel}
-                    onChange={(e) => setNewPlayerLevel(Number(e.target.value))}
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                  >
-                    {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((level) => (
-                      <option key={level} value={level}>
-                        {level}부
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {addError && (
-                <div className="text-red-500 text-sm">{addError}</div>
-              )}
-
-              <div className="flex justify-end">
-                <button
-                  type="submit"
-                  disabled={addingPlayer}
-                  className={`px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 ${
-                    addingPlayer ? 'opacity-50 cursor-not-allowed' : ''
-                  }`}
-                >
-                  {addingPlayer ? '등록 중...' : '선수 등록'}
-                </button>
-              </div>
-            </form>
+      <main className="max-w-7xl mx-auto py-2 sm:px-6 lg:px-8">
+        <div className="bg-white shadow rounded-lg p-4 mb-4">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-lg font-medium text-gray-900">선수 등록</h2>
           </div>
-          
-          {/* 선수 목록 */}
-          <div className="bg-white shadow rounded-lg overflow-hidden">
-            <table className="min-w-full table-fixed divide-y divide-gray-200">
-              <colgroup>
-                <col className="w-[10%]" />
-                <col className="w-[3%]" />
-                <col className="w-[20%]" />
-                <col className="w-[25%]" />
-                <col className="w-[5%]" />
-              </colgroup>
+          <form onSubmit={handleAddPlayer} className="flex flex-col sm:flex-row gap-4">
+            <div className="flex-1">
+              <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
+                이름
+              </label>
+              <input
+                type="text"
+                id="name"
+                value={newPlayerName}
+                onChange={(e) => setNewPlayerName(e.target.value)}
+                className="w-full border-gray-300 rounded-md shadow-sm text-sm"
+                placeholder="선수 이름"
+              />
+            </div>
+            <div className="w-full sm:w-32">
+              <label htmlFor="level" className="block text-sm font-medium text-gray-700 mb-1">
+                부수
+              </label>
+              <select
+                id="level"
+                value={newPlayerLevel}
+                onChange={(e) => setNewPlayerLevel(Number(e.target.value))}
+                className="w-full border-gray-300 rounded-md shadow-sm text-sm"
+              >
+                {[1,2,3,4,5,6,7,8,9].map(level => (
+                  <option key={level} value={level}>{level}부</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-end">
+              <button
+                type="submit"
+                disabled={addingPlayer}
+                className="w-full sm:w-auto px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
+              >
+                {addingPlayer ? '등록 중...' : '선수 등록'}
+              </button>
+            </div>
+          </form>
+          {addError && (
+            <div className="mt-2 text-sm text-red-600">{addError}</div>
+          )}
+        </div>
+
+        {/* 선수 목록 */}
+        <div className="bg-white shadow rounded-lg p-4">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">선수 목록</h2>
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200 text-sm">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    번호
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    이름
-                  </th>
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    부수
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    등록일
-                  </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    작업
-                  </th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">이름</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">부수</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">등록일</th>
+                  <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">관리</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {players.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center">
-                      등록된 선수가 없습니다.
+                {players.map((player) => (
+                  <tr key={player.id} className="hover:bg-gray-50">
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      {editingPlayer?.id === player.id ? (
+                        <input
+                          type="text"
+                          value={editName}
+                          onChange={(e) => setEditName(e.target.value)}
+                          className="w-full border rounded px-2 py-1 text-sm"
+                        />
+                      ) : (
+                        <div className="font-medium text-gray-900">{player.name}</div>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      {editingPlayer?.id === player.id ? (
+                        <select
+                          value={editLevel}
+                          onChange={(e) => setEditLevel(Number(e.target.value))}
+                          className="border rounded px-2 py-1 text-sm"
+                        >
+                          {[1,2,3,4,5,6,7,8,9].map(level => (
+                            <option key={level} value={level}>{level}부</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span className={`px-2 py-1 text-xs font-semibold rounded-full ${levelStyles[player.level]}`}>
+                          {player.level}부
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap text-gray-500">
+                      {formatDate(player.created_at)}
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap text-right space-x-2">
+                      {editingPlayer?.id === player.id ? (
+                        <>
+                          <button
+                            onClick={handleSaveEdit}
+                            className="text-green-600 hover:text-green-900 text-sm"
+                          >
+                            저장
+                          </button>
+                          <button
+                            onClick={handleCancelEdit}
+                            className="text-gray-600 hover:text-gray-900 text-sm"
+                          >
+                            취소
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => handleStartEdit(player)}
+                            className="text-indigo-600 hover:text-indigo-900"
+                          >
+                            <PencilIcon className="h-4 w-4 inline" />
+                          </button>
+                          <button
+                            onClick={() => handleDeletePlayer(player.id)}
+                            className="text-red-600 hover:text-red-900"
+                          >
+                            <TrashIcon className="h-4 w-4 inline" />
+                          </button>
+                        </>
+                      )}
                     </td>
                   </tr>
-                ) : (
-                  players.map((player, index) => (
-                    <tr key={player.id} className={editingPlayer?.id === player.id ? 'bg-gray-50' : ''}>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {index + 1}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 truncate">
-                        {editingPlayer?.id === player.id ? (
-                          <input
-                            type="text"
-                            value={editName}
-                            onChange={(e) => setEditName(e.target.value)}
-                            className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                            required
-                          />
-                        ) : (
-                          player.name
-                        )}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-center">
-                        {editingPlayer?.id === player.id ? (
-                          <select
-                            value={editLevel}
-                            onChange={(e) => setEditLevel(Number(e.target.value))}
-                            className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                          >
-                            {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((level) => (
-                              <option key={level} value={level}>
-                                {level}부
-                              </option>
-                            ))}
-                          </select>
-                        ) : (
-                          <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${levelStyles[player.level as keyof typeof levelStyles]}`}>
-                            {player.level}부
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {new Date(player.created_at).toLocaleDateString()}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        {editingPlayer?.id === player.id ? (
-                          <div className="flex justify-end space-x-2">
-                            <button
-                              onClick={handleSaveEdit}
-                              className="text-indigo-600 hover:text-indigo-900"
-                            >
-                              저장
-                            </button>
-                            <button
-                              onClick={handleCancelEdit}
-                              className="text-gray-600 hover:text-gray-900"
-                            >
-                              취소
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="flex justify-end space-x-2">
-                            <button
-                              onClick={() => handleStartEdit(player)}
-                              className="text-indigo-600 hover:text-indigo-900"
-                            >
-                              수정
-                            </button>
-                            <button
-                              onClick={() => handleDeletePlayer(player.id)}
-                              className="text-red-600 hover:text-red-900"
-                            >
-                              삭제
-                            </button>
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  ))
-                )}
+                ))}
               </tbody>
             </table>
-            {editError && (
-              <div className="px-6 py-4 bg-red-50 border-t border-red-200">
-                <p className="text-sm text-red-600">{editError}</p>
-              </div>
-            )}
           </div>
         </div>
-      </div>
+      </main>
     </div>
   );
 } 

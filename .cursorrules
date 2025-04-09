@@ -192,5 +192,91 @@ const users = await client.users.getUserList({
 
 ## ORM: Drizzle 사용
 
--   **데이터베이스 작업을 위해 ORM으로 Drizzle을 사용하세요.**
--   **Drizzle을 사용하여 데이터베이스 모델을 정의하고, CRUD 작업을 구현하세요.**
+##-   **데이터베이스 작업을 위해 ORM으로 Drizzle을 사용하세요.**
+##-   **Drizzle을 사용하여 데이터베이스 모델을 정의하고, CRUD 작업을 구현하세요.**
+
+
+
+## DATABASE: 테이블은 아래정보를 이용
+- 데이터베이스 테이블은 아래 정보를 참고하여 등록해주세요.
+- 또한 SQL 생성이나 delete는 sql문만 만들어 주면 직접등록하겠습니다.
+    [
+    {
+        "table_name": "matches",
+        "column_name": "created_at",
+        "data_type": "timestamp with time zone",
+        "is_nullable": "NO",
+        "column_default": "timezone('utc'::text, now())"
+    },
+    {
+        "table_name": "users",
+        "column_name": "id",
+        "data_type": "uuid",
+        "is_nullable": "NO",
+        "column_default": "gen_random_uuid()"
+    },
+    {
+        "table_name": "users",
+        "column_name": "created_at",
+        "data_type": "timestamp with time zone",
+        "is_nullable": "NO",
+        "column_default": "timezone('utc'::text, now())"
+    },
+    {
+        "table_name": "users",
+        "column_name": "level",
+        "data_type": "integer",
+        "is_nullable": "NO",
+        "column_default": "1"
+    },
+    {
+        "table_name": "matches",
+        "column_name": "id",
+        "data_type": "uuid",
+        "is_nullable": "NO",
+        "column_default": "uuid_generate_v4()"
+    },
+    {
+        "table_name": "matches",
+        "column_name": "match_date",
+        "data_type": "timestamp with time zone",
+        "is_nullable": "NO",
+        "column_default": "timezone('utc'::text, now())"
+    },
+    {
+        "table_name": "matches",
+        "column_name": "winner_id",
+        "data_type": "uuid",
+        "is_nullable": "NO",
+        "column_default": null
+    },
+    {
+        "table_name": "matches",
+        "column_name": "loser_id",
+        "data_type": "uuid",
+        "is_nullable": "NO",
+        "column_default": null
+    },
+    {
+        "table_name": "matches",
+        "column_name": "winner_sets",
+        "data_type": "integer",
+        "is_nullable": "NO",
+        "column_default": null
+    },
+    {
+        "table_name": "matches",
+        "column_name": "loser_sets",
+        "data_type": "integer",
+        "is_nullable": "NO",
+        "column_default": null
+    },
+    {
+        "table_name": "users",
+        "column_name": "name",
+        "data_type": "text",
+        "is_nullable": "NO",
+        "column_default": null
+    }
+    ]
+

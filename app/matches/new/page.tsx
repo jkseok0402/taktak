@@ -3,34 +3,46 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import Navigation from '@/components/layout/Navigation';
+import { format } from 'date-fns';
+import { formatInTimeZone } from 'date-fns-tz';
+import { CalendarIcon, ArrowLeftIcon, CheckIcon } from '@heroicons/react/24/outline';
 
-interface Player {
+interface IPlayer {
   id: string;
   name: string;
+  level: number;
 }
 
 export default function NewMatchPage() {
   const router = useRouter();
-  const [players, setPlayers] = useState<Player[]>([]);
-  const [player1Id, setPlayer1Id] = useState('');
-  const [player2Id, setPlayer2Id] = useState('');
-  const [player1Sets, setPlayer1Sets] = useState('3');
-  const [player2Sets, setPlayer2Sets] = useState('0');
-  const [matchDate, setMatchDate] = useState(new Date().toISOString().split('T')[0]);
-  const [error, setError] = useState('');
+  const [players, setPlayers] = useState<IPlayer[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [formData, setFormData] = useState({
+    match_date: formatInTimeZone(new Date(), 'Asia/Seoul', "yyyy-MM-dd'T'HH:mm"),
+    winner_id: '',
+    loser_id: '',
+    winner_sets: 3,
+    loser_sets: 0
+  });
 
-  // 선수 목록 불러오기
   useEffect(() => {
     const fetchPlayers = async () => {
       try {
         const response = await fetch('/api/players');
-        if (!response.ok) throw new Error('선수 목록을 불러오는데 실패했습니다.');
+        if (!response.ok) {
+          throw new Error('선수 목록을 불러오는데 실패했습니다.');
+        }
         const data = await response.json();
-        setPlayers(data);
-        setLoading(false);
+        // 선수 이름 기준으로 가나다순 정렬
+        const sortedPlayers = data.sort((a: IPlayer, b: IPlayer) => 
+          a.name.localeCompare(b.name, 'ko-KR')
+        );
+        setPlayers(sortedPlayers);
       } catch (err) {
         setError(err instanceof Error ? err.message : '알 수 없는 오류가 발생했습니다.');
+      } finally {
         setLoading(false);
       }
     };
@@ -40,55 +52,53 @@ export default function NewMatchPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
-
-    if (!player1Id || !player2Id) {
-      setError('두 선수를 모두 선택해주세요.');
-      return;
-    }
-
-    if (player1Id === player2Id) {
-      setError('두 선수는 동일할 수 없습니다.');
-      return;
-    }
-
-    const player1SetsNum = parseInt(player1Sets);
-    const player2SetsNum = parseInt(player2Sets);
-
-    if (player1SetsNum === player2SetsNum) {
-      setError('스코어는 동일할 수 없습니다.');
-      return;
-    }
-
-    // 스코어가 높은 쪽이 승자
-    const winnerId = player1SetsNum > player2SetsNum ? player1Id : player2Id;
-    const loserId = player1SetsNum > player2SetsNum ? player2Id : player1Id;
-    const winnerSets = Math.max(player1SetsNum, player2SetsNum);
-    const loserSets = Math.min(player1SetsNum, player2SetsNum);
-
+    
     try {
+      // 같은 선수를 선택했는지 확인
+      if (formData.winner_id === formData.loser_id) {
+        alert('같은 선수를 선택할 수 없습니다.');
+        return;
+      }
+
+      // 입력된 시간을 그대로 ISO 문자열로 변환 (이미 한국 시간임)
+      const match_date = new Date(formData.match_date).toISOString();
+
+      // 세트 스코어를 비교하여 winner와 loser를 결정
+      const player1Id = formData.winner_id;
+      const player2Id = formData.loser_id;
+      const player1Sets = formData.winner_sets;
+      const player2Sets = formData.loser_sets;
+
+      // 세트 스코어가 높은 선수가 winner가 되도록 데이터 재구성
+      const matchData = {
+        match_date: match_date,
+        winner_id: player1Sets > player2Sets ? player1Id : player2Id,
+        loser_id: player1Sets > player2Sets ? player2Id : player1Id,
+        winner_sets: Math.max(player1Sets, player2Sets),
+        loser_sets: Math.min(player1Sets, player2Sets)
+      };
+
+      console.log('Sending match data:', matchData);
+
       const response = await fetch('/api/matches', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          winner_id: winnerId,
-          loser_id: loserId,
-          winner_sets: winnerSets,
-          loser_sets: loserSets,
-          match_date: matchDate,
-        }),
+        body: JSON.stringify(matchData),
       });
 
+      const data = await response.json();
+      console.log('API Response:', data);
+
       if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || '경기 결과 저장 중 오류가 발생했습니다.');
+        throw new Error(data.error || '경기 결과 저장에 실패했습니다.');
       }
 
       router.push('/matches');
     } catch (err) {
-      setError(err instanceof Error ? err.message : '알 수 없는 오류가 발생했습니다.');
+      console.error('Error details:', err);
+      alert(err instanceof Error ? err.message : '알 수 없는 오류가 발생했습니다.');
     }
   };
 
@@ -100,165 +110,141 @@ export default function NewMatchPage() {
     );
   }
 
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-red-500">{error}</div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-100">
-      {/* 네비게이션 바 */}
-      <nav className="bg-white shadow-lg">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between h-16">
-            <div className="flex">
-              <div className="flex-shrink-0 flex items-center">
-                <h1 className="text-xl font-bold text-gray-900">흥탁 리그관리</h1>
-              </div>
-              <div className="hidden sm:ml-6 sm:flex sm:space-x-8">
-                <Link href="/dashboard" className="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
-                  대시보드
-                </Link>
-                <Link href="/matches" className="border-indigo-500 text-gray-900 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
-                  경기 결과
-                </Link>
-                <Link href="/stats" className="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
-                  선수 통계
-                </Link>
-                <Link href="/visualization" className="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
-                  리그 통계
-                </Link>
-                <Link href="/players" className="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
-                  선수 관리
-                </Link>
-              </div>
-            </div>
+      <Navigation />
+      <main className="max-w-7xl mx-auto py-2 sm:px-6 lg:px-8">
+        <div className="bg-white shadow rounded-lg p-4 mb-4">
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-lg font-medium text-gray-900">경기 결과 입력</h2>
+            <Link
+              href="/matches"
+              className="inline-flex items-center px-3 py-1.5 text-sm font-medium text-gray-700 hover:text-gray-900"
+            >
+              돌아가기
+            </Link>
           </div>
-        </div>
-      </nav>
-
-      {/* 메인 컨텐츠 */}
-      <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-        <div className="max-w-md mx-auto bg-white rounded-lg shadow p-6">
-          <h1 className="text-2xl font-bold text-gray-900 mb-6">새 경기 결과 입력</h1>
           
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-3 gap-4 items-center">
-              {/* 선수 1 */}
-              <div className="space-y-4">
-                <div>
-                  <label htmlFor="player1" className="block text-sm font-medium text-gray-700">
-                    선수 1
-                  </label>
-                  <select
-                    id="player1"
-                    value={player1Id}
-                    onChange={(e) => setPlayer1Id(e.target.value)}
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                    required
-                  >
-                    <option value="">선택</option>
-                    {players.map((player) => (
-                      <option key={player.id} value={player.id}>
-                        {player.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label htmlFor="player1-sets" className="block text-sm font-medium text-gray-700">
-                    승리 세트수
-                  </label>
-                  <input
-                    type="number"
-                    id="player1-sets"
-                    min="0"
-                    max="5"
-                    value={player1Sets}
-                    onChange={(e) => setPlayer1Sets(e.target.value)}
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                    required
-                  />
-                </div>
-              </div>
-
-              {/* VS 표시 */}
-              <div className="flex flex-col items-center justify-center h-full">
-                <div className="text-2xl font-bold text-gray-500">VS</div>
-              </div>
-
-              {/* 선수 2 */}
-              <div className="space-y-4">
-                <div>
-                  <label htmlFor="player2" className="block text-sm font-medium text-gray-700">
-                    선수 2
-                  </label>
-                  <select
-                    id="player2"
-                    value={player2Id}
-                    onChange={(e) => setPlayer2Id(e.target.value)}
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                    required
-                  >
-                    <option value="">선택</option>
-                    {players.map((player) => (
-                      <option key={player.id} value={player.id}>
-                        {player.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label htmlFor="player2-sets" className="block text-sm font-medium text-gray-700">
-                    승리 세트수
-                  </label>
-                  <input
-                    type="number"
-                    id="player2-sets"
-                    min="0"
-                    max="5"
-                    value={player2Sets}
-                    onChange={(e) => setPlayer2Sets(e.target.value)}
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                    required
-                  />
-                </div>
-              </div>
-            </div>
-
+          <form onSubmit={handleSubmit} className="space-y-6">
             <div>
-              <label htmlFor="match-date" className="block text-sm font-medium text-gray-700">
-                경기 날짜
+              <label htmlFor="match_date" className="block text-sm font-medium text-gray-700">
+                경기 날짜 및 시간
               </label>
               <input
-                type="date"
-                id="match-date"
-                value={matchDate}
-                onChange={(e) => setMatchDate(e.target.value)}
+                type="datetime-local"
+                id="match_date"
+                name="match_date"
+                value={formData.match_date}
+                onChange={(e) => setFormData({ ...formData, match_date: e.target.value })}
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
                 required
               />
             </div>
 
-            {error && (
-              <div className="text-red-600 text-sm">{error}</div>
-            )}
+            <div className="grid grid-cols-2 gap-6">
+              <div>
+                <label htmlFor="winner_id" className="block text-sm font-medium text-gray-700">
+                  선수 1
+                </label>
+                <select
+                  id="winner_id"
+                  name="winner_id"
+                  value={formData.winner_id}
+                  onChange={(e) => setFormData({ ...formData, winner_id: e.target.value })}
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  required
+                >
+                  <option value="">선수 선택</option>
+                  {players.map((player) => (
+                    <option key={player.id} value={player.id}>
+                      {player.name} ({player.level}부)
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label htmlFor="loser_id" className="block text-sm font-medium text-gray-700">
+                  선수 2
+                </label>
+                <select
+                  id="loser_id"
+                  name="loser_id"
+                  value={formData.loser_id}
+                  onChange={(e) => setFormData({ ...formData, loser_id: e.target.value })}
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  required
+                >
+                  <option value="">선수 선택</option>
+                  {players.map((player) => (
+                    <option key={player.id} value={player.id}>
+                      {player.name} ({player.level}부)
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-6">
+              <div>
+                <label htmlFor="winner_sets" className="block text-sm font-medium text-gray-700">
+                  선수 1 세트 수
+                </label>
+                <input
+                  type="number"
+                  id="winner_sets"
+                  name="winner_sets"
+                  min="0"
+                  value={formData.winner_sets}
+                  onChange={(e) => setFormData({ ...formData, winner_sets: parseInt(e.target.value) })}
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  required
+                />
+              </div>
+
+              <div>
+                <label htmlFor="loser_sets" className="block text-sm font-medium text-gray-700">
+                  선수 2 세트 수
+                </label>
+                <input
+                  type="number"
+                  id="loser_sets"
+                  name="loser_sets"
+                  min="0"
+                  value={formData.loser_sets}
+                  onChange={(e) => setFormData({ ...formData, loser_sets: parseInt(e.target.value) })}
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  required
+                />
+              </div>
+            </div>
 
             <div className="flex justify-end space-x-3">
               <button
                 type="button"
                 onClick={() => router.push('/matches')}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
               >
                 취소
               </button>
               <button
                 type="submit"
-                className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700"
+                className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 border border-transparent rounded-md shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
               >
                 저장
               </button>
             </div>
           </form>
         </div>
-      </div>
+      </main>
     </div>
   );
 } 
