@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 interface IUser {
   id: string;
   name: string;
@@ -46,59 +49,23 @@ export async function GET() {
       throw usersError;
     }
 
-    // 모든 경기 결과 조회 (최근 경기 정보를 위해)
-    const { data: matches, error: matchesError } = await supabase
-      .from('matches')
-      .select(`
-        id,
-        match_date,
-        winner_id,
-        loser_id,
-        winner_sets,
-        loser_sets,
-        winner:winner_id(id, name),
-        loser:loser_id(id, name)
-      `)
-      .order('match_date', { ascending: false })
-      .order('created_at', { ascending: false });
-
-    if (matchesError) {
-      throw matchesError;
-    }
-
-    // 선수별 최근 5경기 정보 계산
-    const recentMatches: { [key: string]: IRecentMatch[] } = {};
-    
-    (users as IUser[]).forEach(user => {
-      const typedMatches = matches as unknown as IMatchResponse[];
-      recentMatches[user.id] = typedMatches
-        .filter(match => match.winner_id === user.id || match.loser_id === user.id)
-        .map(match => ({
-          id: match.id,
-          date: match.match_date,
-          winner: match.winner.name,
-          loser: match.loser.name,
-          winnerSets: match.winner_sets,
-          loserSets: match.loser_sets,
-          isWin: match.winner_id === user.id
-        }))
-        .slice(0, 5);
-    });
-
-    // 선수 정보에 최근 5경기 정보 추가
-    const playersWithStats = (users as IUser[]).map(user => ({
-      ...user,
-      recent_matches: recentMatches[user.id] || []
-    }));
-
-    return NextResponse.json({
-      players: playersWithStats
-    });
+    return new NextResponse(
+      JSON.stringify({ players: users }),
+      {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0',
+        },
+      }
+    );
 
   } catch (error) {
-    console.error('Error:', error);
-    return NextResponse.json(
-      { error: '선수 목록을 불러오는데 실패했습니다.' },
+    console.error('Error fetching players:', error);
+    return new NextResponse(
+      JSON.stringify({ error: '선수 목록을 가져오는데 실패했습니다.' }),
       { status: 500 }
     );
   }

@@ -27,8 +27,10 @@ export async function GET() {
     // 고유한 경기 날짜 추출 (날짜만 비교)
     const uniqueMatchDates = [...new Set(
       matches.map(match => {
-        const date = new Date(match.match_date);
-        return date.toISOString().split('T')[0];
+        const utcDate = new Date(match.match_date);
+        // UTC+9 적용
+        const kstDate = new Date(utcDate.getTime() + (9 * 60 * 60 * 1000));
+        return kstDate.toISOString().split('T')[0];
       })
     )].sort().reverse(); // 날짜 기준 내림차순 정렬
 
@@ -38,8 +40,10 @@ export async function GET() {
       const userMatchDates = matches
         .filter(match => match.winner_id === user.id || match.loser_id === user.id)
         .map(match => {
-          const date = new Date(match.match_date);
-          return date.toISOString().split('T')[0];
+          const utcDate = new Date(match.match_date);
+          // UTC+9 적용
+          const kstDate = new Date(utcDate.getTime() + (9 * 60 * 60 * 1000));
+          return kstDate.toISOString().split('T')[0];
         });
 
       // 중복 제거된 참석 날짜 목록

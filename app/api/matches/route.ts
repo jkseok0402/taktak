@@ -3,6 +3,8 @@ import { supabase } from '@/db';
 import { formatInTimeZone } from 'date-fns-tz';
 
 export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
+export const revalidate = 0;
 
 // 모든 매치 조회 API
 export async function GET(request: Request) {
@@ -13,6 +15,9 @@ export async function GET(request: Request) {
     const playerId = searchParams.get('playerId');
     const page = parseInt(searchParams.get('page') || '1');
     const limit = parseInt(searchParams.get('limit') || '10');
+    const timestamp = searchParams.get('t');
+    
+    console.log('API 요청 수신:', { startDate, endDate, timestamp });
 
     // 기본 쿼리 설정
     let matchesQuery = supabase
@@ -21,14 +26,15 @@ export async function GET(request: Request) {
         *,
         winners:winner_id(*),
         losers:loser_id(*)
-      `)
+      `, { count: 'exact' })
       .order('match_date', { ascending: false });
 
     // 날짜 필터 적용
     if (startDate && endDate) {
+      console.log('Filtering by date range:', { startDate, endDate });
       matchesQuery = matchesQuery
         .gte('match_date', startDate)
-        .lte('match_date', endDate);
+        .lt('match_date', endDate);
     }
 
     // 특정 선수 필터 적용
@@ -82,57 +88,24 @@ export async function POST(request: Request) {
       );
     }
 
-    // 같은 날짜의 동일 선수간 경기 결과가 있는지 확인
-    const matchDate = new Date(match_date);
-    const startOfDay = new Date(matchDate);
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date(matchDate);
-    endOfDay.setHours(23, 59, 59, 999);
+    // 현재 시간을 포함한 날짜 설정
+    const matchDateTime = new Date(match_date);
+    
+    // 이미 UTC로 변환된 시간을 그대로 사용
+    // match_date는 프론트엔드에서 이미 UTC로 변환되어 전송됨
+    console.log('Using match date directly from client:', match_date);
 
-    console.log('Checking for existing matches:', {
-      startOfDay: startOfDay.toISOString(),
-      endOfDay: endOfDay.toISOString(),
-      winner_id,
-      loser_id
-    });
-
-    const { data: existingMatches, error: existingMatchesError } = await supabase
-      .from('matches')
-      .select()
-      .gte('match_date', startOfDay.toISOString())
-      .lte('match_date', endOfDay.toISOString())
-      .or(
-        `and(winner_id.eq.${winner_id},loser_id.eq.${loser_id}),` +
-        `and(winner_id.eq.${loser_id},loser_id.eq.${winner_id})`
-      );
-
-    if (existingMatchesError) {
-      console.error('Error checking existing matches:', existingMatchesError);
-      return NextResponse.json(
-        { error: '기존 경기 결과 확인 중 오류가 발생했습니다.' },
-        { status: 500 }
-      );
-    }
-
-    if (existingMatches && existingMatches.length > 0) {
-      console.log('Found existing matches:', existingMatches);
-      return NextResponse.json(
-        { error: '동일한 날짜에 같은 선수간의 경기 결과가 이미 등록되어 있습니다.' },
-        { status: 400 }
-      );
-    }
-
-    // 경기 결과 저장 (시간은 이미 한국 시간으로 입력됨)
+    // 경기 결과 저장
     const { data: match, error: insertError } = await supabase
       .from('matches')
       .insert({
-        match_date,
+        match_date: match_date, // 클라이언트에서 보낸 UTC 시간 그대로 사용
         winner_id,
         loser_id,
         winner_sets,
         loser_sets
       })
-      .select()
+      .select('*, winners:winner_id(*), losers:loser_id(*)')
       .single();
 
     if (insertError) {
@@ -142,6 +115,8 @@ export async function POST(request: Request) {
         { status: 500 }
       );
     }
+
+    console.log('Successfully saved match:', match);
 
     return NextResponse.json({ 
       message: '경기 결과가 성공적으로 저장되었습니다.',
@@ -168,7 +143,7 @@ export async function DELETE(request: Request) {
     const { data, error } = await supabase
       .from('matches')
       .delete()
-      .eq('id', parseInt(matchId))
+      .eq('id', matchId)
       .select();
 
     if (error) {

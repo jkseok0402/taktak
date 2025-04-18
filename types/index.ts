@@ -5,16 +5,35 @@ export interface IPlayer {
   created_at?: string;
 }
 
+export interface IUser {
+  id: string;
+  name: string;
+  level: number;
+  created_at: Date;
+}
+
 export interface IMatch {
   id: string;
-  match_date: string;
+  match_date: Date;
   winner_id: string;
   loser_id: string;
   winner_sets: number;
   loser_sets: number;
-  winner: string | { id: string; name: string; level: number };
-  loser: string | { id: string; name: string; level: number };
-  created_at: string;
+  created_at: Date;
+}
+
+export interface IMatchWithPlayers extends IMatch {
+  winner: IUser;
+  loser: IUser;
+}
+
+export interface IRanking {
+  user: IUser;
+  wins: number;
+  losses: number;
+  winRate: number;
+  totalSets: number;
+  rank: number;
 }
 
 export interface IPlayerStats {
